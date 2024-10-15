@@ -3,6 +3,7 @@ import React, { useState } from "react";
 function App() {
     const [regoFile, setRegoFile] = useState(null);
     const [jsonFile, setJsonFile] = useState(null);
+    const [tfFile, setTfFile] = useState(null); // State for main.tf file
     const [policy, setPolicy] = useState("");
     const [output, setOutput] = useState("");
     const [aiPrompt, setAiPrompt] = useState("");
@@ -14,6 +15,10 @@ function App() {
 
     const handleJsonFileChange = (event) => {
         setJsonFile(event.target.files[0]);
+    };
+
+    const handleTfFileChange = (event) => {
+        setTfFile(event.target.files[0]); // Update state for main.tf file
     };
 
     const handleEvaluate = async () => {
@@ -29,11 +34,7 @@ function App() {
             });
 
             const data = await response.json();
-            if (response.ok) {
-                setOutput(data.output);
-            } else {
-                setOutput("Error during evaluation: " + (data.error || "Unknown error"));
-            }
+            setOutput(data.output);
         } catch (error) {
             console.error("Error during evaluation:", error);
             setOutput("An error occurred during evaluation.");
@@ -71,39 +72,75 @@ function App() {
         }
     };
 
+    // Function to handle conversion of main.tf to plan.json
+    const handleConvert = async () => {
+        const formData = new FormData();
+        formData.append("tfFile", tfFile); // Append main.tf file to form data
+
+        try {
+            const response = await fetch("http://localhost:5000/convert", {
+                method: "POST",
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || "Failed to convert file");
+            }
+
+            // Trigger download of plan.json
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'plan.json';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        } catch (error) {
+            console.error("Error during conversion:", error);
+        }
+    };
+
     return (
         <div style={styles.appContainer}>
             <h1 style={styles.heading}>Opa Policy Validator</h1>
             <div style={styles.inputContainer}>
-                <input
-                    type="file"
-                    accept=".rego"
-                    onChange={handleRegoFileChange}
-                    style={styles.fileInput}
-                />
-                <input
-                    type="file"
-                    accept=".json"
-                    onChange={handleJsonFileChange}
-                    style={styles.fileInput}
-                />
-                <input
-                    type="text"
-                    value={policy}
-                    onChange={(e) => setPolicy(e.target.value)}
-                    placeholder="Enter policy input"
-                    style={styles.policyInput}
-                />
-                <button onClick={handleEvaluate} style={styles.button}>
-                    Evaluate Policy
-                </button>
+                <div style={styles.fileInput}>
+                    <label htmlFor="tfFile" style={styles.label}>Upload main.tf:</label>
+                    <input type="file" id="tfFile" onChange={handleTfFileChange} style={styles.input} />
+                    <button onClick={handleConvert} style={styles.button}>
+                        Convert
+                    </button>
+                </div>
+                <div style={styles.fileInput}>
+                    <label htmlFor="regoFile" style={styles.label}>Upload Rego File:</label>
+                    <input type="file" id="regoFile" onChange={handleRegoFileChange} style={styles.input} />
+                </div>
+                <div style={styles.fileInput}>
+                    <label htmlFor="jsonFile" style={styles.label}>Upload JSON File:</label>
+                    <input type="file" id="jsonFile" onChange={handleJsonFileChange} style={styles.input} />
+                </div>
+                <div style={styles.fileInput}>
+                    <label htmlFor="policy" style={styles.label}>Policy Input:</label>
+                    <input
+                        type="text"
+                        id="policy"
+                        value={policy}
+                        onChange={(e) => setPolicy(e.target.value)}
+                        style={styles.input}
+                    />
+                    <button onClick={handleEvaluate} style={styles.button}>
+                        Evaluate
+                    </button>
+                </div>
             </div>
             <div style={styles.outputContainer}>
                 <label htmlFor="outputText" style={styles.labelCenter}>Output:</label>
                 <textarea
                     id="outputText"
                     value={output}
-                    readOnly
+                    onChange={(e) => setOutput(e.target.value)}
                     rows="10"
                     style={styles.textArea}
                 />
@@ -126,7 +163,7 @@ function App() {
                     <textarea
                         id="aiOutputText"
                         value={aiOutput}
-                        readOnly
+                        onChange={(e) => setAiOutput(e.target.value)}
                         rows="6"
                         style={styles.textArea}
                     />
@@ -136,55 +173,42 @@ function App() {
     );
 }
 
-// Styles
+// Styles...
 const styles = {
     appContainer: {
         padding: "20px",
-        maxWidth: "600px",
-        margin: "0 auto",
-        border: "1px solid #ccc",
-        borderRadius: "5px",
-        boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+        fontFamily: "Arial, sans-serif",
     },
     heading: {
         textAlign: "center",
-        marginBottom: "20px",
     },
     inputContainer: {
-        display: "flex",
-        flexDirection: "column",
-        gap: "10px",
+        marginBottom: "20px",
     },
     fileInput: {
-        padding: "10px",
+        margin: "10px 0",
     },
-    policyInput: {
-        padding: "10px",
+    label: {
+        display: "block",
+        marginBottom: "5px",
+    },
+    input: {
+        padding: "8px",
+        width: "100%",
+        maxWidth: "400px",
     },
     button: {
-        padding: "10px",
-        backgroundColor: "#4CAF50",
-        color: "white",
-        border: "none",
-        borderRadius: "5px",
+        padding: "10px 15px",
+        marginTop: "10px",
         cursor: "pointer",
     },
     outputContainer: {
         marginTop: "20px",
     },
-    labelCenter: {
-        textAlign: "center",
-        display: "block",
-    },
     textArea: {
         width: "100%",
+        maxWidth: "400px",
         padding: "10px",
-        resize: "none",
-    },
-    smallTextArea: {
-        width: "100%",
-        padding: "10px",
-        resize: "none",
     },
     aiAssistContainer: {
         marginTop: "20px",
@@ -192,8 +216,17 @@ const styles = {
     subHeading: {
         marginBottom: "10px",
     },
+    smallTextArea: {
+        width: "100%",
+        maxWidth: "400px",
+        padding: "10px",
+    },
     aiOutputContainer: {
         marginTop: "10px",
+    },
+    labelCenter: {
+        textAlign: "center",
+        display: "block",
     },
 };
 
