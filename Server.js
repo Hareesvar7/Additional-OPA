@@ -4,7 +4,8 @@ const cors = require("cors");
 const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
-require("dotenv").config();  // Load environment variables from .env
+const { exec } = require("child_process");
+require("dotenv").config(); // Load environment variables from .env
 
 const app = express();
 const PORT = 5000;
@@ -16,6 +17,11 @@ app.use(express.json());
 // Set up Multer for file uploads (in-memory storage)
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
+
+// Utility function to execute shell commands
+const execCommand = (command, callback) => {
+    exec(command, callback);
+};
 
 // Handle policy evaluation
 app.post("/evaluate", upload.fields([{ name: "regoFile" }, { name: "jsonFile" }]), (req, res) => {
@@ -34,8 +40,7 @@ app.post("/evaluate", upload.fields([{ name: "regoFile" }, { name: "jsonFile" }]
     const opaCommand = `opa eval -i ${jsonFilePath} -d ${regoFilePath} "${policyInput}"`;
 
     // Execute the OPA command
-    const { exec } = require("child_process");
-    exec(opaCommand, (error, stdout, stderr) => {
+    execCommand(opaCommand, (error, stdout, stderr) => {
         // Clean up temporary files
         fs.unlinkSync(regoFilePath);
         fs.unlinkSync(jsonFilePath);
@@ -63,10 +68,10 @@ app.post("/ai-assist", async (req, res) => {
         const response = await axios.post(
             "https://api.openai.com/v1/chat/completions", // Updated endpoint for chat models
             {
-                model: "gpt-4",  // Specify GPT-4
+                model: "gpt-4", // Specify GPT-4
                 messages: [{ role: "user", content: prompt }], // Format the input as messages
-                max_tokens: 150,  // Ensure this value is provided to control token length
-                temperature: 0.7,  // Optional but recommended for creative outputs
+                max_tokens: 150, // Control token length
+                temperature: 0.7, // Optional but recommended for creative outputs
             },
             {
                 headers: {
@@ -85,6 +90,41 @@ app.post("/ai-assist", async (req, res) => {
             error: error.response ? error.response.data.error.message : "Internal Server Error",
         });
     }
+});
+
+// Handle conversion from main.tf to plan.json
+app.post("/convert", upload.single("tfFile"), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: "No TF file uploaded." });
+    }
+
+    const tfFileContent = req.file.buffer.toString(); // Main.tf file content
+    const tfFilePath = path.join(__dirname, "temp_main.tf");
+    
+    // Save the TF file temporarily to disk
+    fs.writeFileSync(tfFilePath, tfFileContent);
+
+    // Command to convert the TF file to plan.json
+    const convertCommand = `terraform plan -out=temp_plan.tfplan && terraform show -json temp_plan.tfplan > plan.json`;
+
+    // Execute the Terraform command
+    execCommand(convertCommand, (error, stdout, stderr) => {
+        fs.unlinkSync(tfFilePath); // Clean up the TF file
+
+        if (error) {
+            console.error(`Error: ${stderr}`);
+            return res.status(500).json({ error: "Error converting the TF file." });
+        }
+
+        // Send the plan.json back to the client for download
+        res.download(path.join(__dirname, "plan.json"), "plan.json", (err) => {
+            if (err) {
+                console.error("Error sending file:", err);
+            }
+            // Clean up the generated plan.json file
+            fs.unlinkSync(path.join(__dirname, "plan.json"));
+        });
+    });
 });
 
 // Start the server
